@@ -7,7 +7,7 @@ by Cibo Mahto.
 """
 
 import numpy as np
-import visa
+import pyvisa
 
 # Get the USB device, e.g. 'USB0::0x1AB1::0x0588::DS1ED141904883'
 # instruments = visa.get_instruments_list()
@@ -19,14 +19,15 @@ import visa
 
 
 class RigolDS1102E:
-    def __init__(self, address):
+    def __init__(self, address="USB0::0x1AB1::0x0588::DS1ET183950054::INSTR"):
         self.__address = address
         self.connect()
 
     def connect(self, address=None):
+        rm = pyvisa.ResourceManager()
         if address is None:
             address = self.__address
-        self.handle = visa.instrument(address, timeout=20, chunk_size=1024000)
+        self.handle = rm.open_resource(address, timeout=20, chunk_size=1024000)
 
     def disconnect(self):
         self.handle.close()
@@ -35,16 +36,17 @@ class RigolDS1102E:
         if channel not in [1, 2]:
             raise ValueError("Channel must be 1 or 2.")
 
-        self.handle.write(":STOP")  # stop acquisiton
-        timescale = self.handle.ask_for_values(":TIM:SCAL?")[0]
-        timeoffset = self.handle.ask_for_values(":TIM:OFFS?")[0]
-        voltscale = self.handle.ask_for_values(":CHAN1:SCAL?")[0]
-        voltoffset = self.handle.ask_for_values(":CHAN1:OFFS?")[0]
+        # self.handle.write(":STOP")  # stop acquisiton
+        timescale = float(self.handle.query(":TIM:SCAL?"))
+        timeoffset = float(self.handle.query(":TIM:OFFS?"))
+        voltscale = float(self.handle.query(":CHAN1:SCAL?"))
+        voltoffset = float(self.handle.query(":CHAN1:OFFS?"))
         self.handle.write(":WAV:POIN:MODE RAW")
-        rawdata = self.handle.ask(":WAV:DATA? CHAN1")[10:]
+        self.handle.write(":WAV:DATA? CHAN1")
+        rawdata = self.handle.read_raw()[10:]
         data_size = len(rawdata)
-        sample_rate = self.handle.ask_for_values(":ACQ:SAMP?")[0]
-        self.scope.write(":KEY:FORCE")
+        sample_rate = float(self.handle.query(":ACQ:SAMP?"))
+        self.handle.write(":KEY:FORCE")
         data = np.frombuffer(rawdata, "B")
 
         # Walk through the data, and map it to actual voltages
